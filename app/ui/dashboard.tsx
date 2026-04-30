@@ -1,9 +1,9 @@
-import db, { Movement } from "@/lib/db";
+import { addMovement, getMaterials, getMovements } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
 type Role = "admin" | "viewer";
 
-async function addMovement(formData: FormData) {
+async function createMovement(formData: FormData) {
   "use server";
 
   const type = String(formData.get("type") ?? "");
@@ -12,23 +12,24 @@ async function addMovement(formData: FormData) {
   const location = String(formData.get("location") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
-  if (!["IN", "OUT"].includes(type) || !material || quantity <= 0 || !location) {
+  if (!(["IN", "OUT"] as const).includes(type as "IN" | "OUT") || !material || quantity <= 0 || !location) {
     return;
   }
 
-  db.prepare(
-    "INSERT INTO movements (type, material, quantity, location, note, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-  ).run(type, material, quantity, location, note || null, new Date().toISOString());
+  addMovement({
+    type: type as "IN" | "OUT",
+    material,
+    quantity,
+    location,
+    note: note || null
+  });
 
   revalidatePath("/");
 }
 
 export function Dashboard({ role }: { role: Role }) {
-  const movements = db
-    .prepare("SELECT id, type, material, quantity, location, note, created_at FROM movements ORDER BY id DESC")
-    .all() as Movement[];
-
-  const materials = db.prepare("SELECT name FROM materials ORDER BY name ASC").all() as { name: string }[];
+  const movements = getMovements();
+  const materials = getMaterials();
 
   const summaryMap = new Map<string, { in: number; out: number }>();
   movements.forEach((m) => {
@@ -38,9 +39,9 @@ export function Dashboard({ role }: { role: Role }) {
     summaryMap.set(m.material, row);
   });
 
-  materials.forEach((m) => {
-    if (!summaryMap.has(m.name)) {
-      summaryMap.set(m.name, { in: 0, out: 0 });
+  materials.forEach((name) => {
+    if (!summaryMap.has(name)) {
+      summaryMap.set(name, { in: 0, out: 0 });
     }
   });
 
@@ -95,7 +96,7 @@ export function Dashboard({ role }: { role: Role }) {
       <section>
         <h2>New Entry</h2>
         {role === "admin" ? (
-          <form action={addMovement} className="form-grid">
+          <form action={createMovement} className="form-grid">
             <label>
               Type
               <select name="type" required>
@@ -106,9 +107,9 @@ export function Dashboard({ role }: { role: Role }) {
             <label>
               Material
               <select name="material" required>
-                {materials.map((m) => (
-                  <option key={m.name} value={m.name}>
-                    {m.name}
+                {materials.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>
